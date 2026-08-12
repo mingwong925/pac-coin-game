@@ -125,13 +125,10 @@ canvas { display: block; width: 100%; height: auto; image-rendering: pixelated; 
   }
 
   #mobileControls {
-    width: min(96vw, 360px);
+    width: min(88vw, 328px);
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    grid-template-areas:
-      ". up ."
-      "left down right";
-    gap: 10px;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
     opacity: 0;
     pointer-events: none;
     transform: translateY(8px);
@@ -145,14 +142,25 @@ canvas { display: block; width: 100%; height: auto; image-rendering: pixelated; 
   }
 
   #mobileControls button {
-    min-height: 48px;
+    position: relative;
+    aspect-ratio: 1;
     border: 3px solid #111;
     border-radius: 0;
     background: #f7c948;
     color: #111;
-    font: 900 22px/1 ui-monospace, Menlo, Monaco, monospace;
     box-shadow: 0 6px 0 #7a4b00, 0 0 0 2px #fff4a6 inset;
     touch-action: none;
+  }
+
+  #mobileControls button::before {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 0;
+    height: 0;
+    border-style: solid;
+    filter: drop-shadow(3px 3px 0 rgba(255,255,255,.45));
   }
 
   #mobileControls button:active {
@@ -160,8 +168,27 @@ canvas { display: block; width: 100%; height: auto; image-rendering: pixelated; 
     box-shadow: 0 2px 0 #7a4b00, 0 0 0 2px #fff4a6 inset;
   }
 
-  #mobileControls [data-dir="up"] { grid-area: up; }
-  #mobileControls [data-dir="left"] { grid-area: left; }
-  #mobileControls [data-dir="down"] { grid-area: down; }
-  #mobileControls [data-dir="right"] { grid-area: right; }
+  #mobileControls [data-dir="left"]::before {
+    transform: translate(-58%, -50%);
+    border-width: 13px 19px 13px 0;
+    border-color: transparent #111 transparent transparent;
+  }
+
+  #mobileControls [data-dir="up"]::before {
+    transform: translate(-50%, -58%);
+    border-width: 0 13px 19px 13px;
+    border-color: transparent transparent #111 transparent;
+  }
+
+  #mobileControls [data-dir="down"]::before {
+    transform: translate(-50%, -42%);
+    border-width: 19px 13px 0 13px;
+    border-color: #111 transparent transparent transparent;
+  }
+
+  #mobileControls [data-dir="right"]::before {
+    transform: translate(-42%, -50%);
+    border-width: 13px 0 13px 19px;
+    border-color: transparent transparent transparent #111;
+  }
 }
