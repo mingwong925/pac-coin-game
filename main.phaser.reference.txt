@@ -1,0 +1,699 @@
+import Phaser from "phaser";
+import "./style.css";
+
+type Direction = "up" | "down" | "left" | "right" | "none";
+
+type EnemyState = {
+  sprite: Phaser.Physics.Arcade.Sprite;
+  dir: Direction;
+  spawn: Phaser.Math.Vector2;
+};
+
+type StageStats = {
+  mapIndex: number;
+  enemyCount: number;
+  enemySpeed: number;
+};
+
+const TILE_SIZE = 28;
+const BASE_ENEMY_SPEED = 88;
+const PLAYER_SPEED = 130;
+const POWER_DURATION_MS = 7000;
+const STAGE_SPEED_STEP = 0.08;
+const STAGE_SPEED_CAP_MULTIPLIER = 2.3;
+
+const MAPS = [
+  [
+    "#####################",
+    "#P........#........E#",
+    "#.###.###.#.###.###.#",
+    "#G#.....#...#.....#G#",
+    "#.#.###.#####.###.#.#",
+    "#...#...........#...#",
+    "###.#.###.#.###.#.###",
+    "#...#...#.#...#.#...#",
+    "#.#####.#.#.#.#.###.#",
+    "#.....#.#.#.#.#.....#",
+    "#.###.#.#.#.#.###.#.#",
+    "#...#...#...#...#...#",
+    "###.###########.###.#",
+    "#...#.....E.....#...#",
+    "#.###.###.#.###.###.#",
+    "#.....#...#...#.....#",
+    "#.#####.#####.#####.#",
+    "#.........#.........#",
+    "#####################"
+  ],
+  [
+    "#####################",
+    "#P..#.....#.....#..E#",
+    "#.#.#.###.#.###.#.#.#",
+    "#G#...#...#...#...#G#",
+    "#.###.#.#####.#.###.#",
+    "#.....#...#...#.....#",
+    "###.#####.#.#####.###",
+    "#...#.....E.....#...#",
+    "#.###.###.#.###.###.#",
+    "#.#...#...#...#...#.#",
+    "#.#.###.#####.###.#.#",
+    "#...#...........#...#",
+    "###.#.###.#.###.#.###",
+    "#...#...#.#...#.#...#",
+    "#.###.#.#.#.#.#.###.#",
+    "#.....#...#...#.....#",
+    "#.#####.#####.#####.#",
+    "#.........#.........#",
+    "#####################"
+  ],
+  [
+    "#####################",
+    "#P....#.......#....E#",
+    "#.###.#.#####.#.###.#",
+    "#G#...#...#...#...#G#",
+    "#.#.#####.#.#####.#.#",
+    "#.#.....#...#.....#.#",
+    "#.#####.###.#.#####.#",
+    "#.....#.....#.....#.#",
+    "#.###.#####.#####.#.#",
+    "#...#...E.....#...#.#",
+    "###.###.#####.#.###.#",
+    "#...#...#...#.#.....#",
+    "#.###.###.#.#.#####.#",
+    "#.....#...#...#.....#",
+    "#.#####.#####.###.#.#",
+    "#...#.....#.....#.#.#",
+    "###.#.###.#.###.#.#.#",
+    "#.....#.......#.....#",
+    "#####################"
+  ]
+];
+
+const oppositeDir: Record<Exclude<Direction, "none">, Exclude<Direction, "none">> = {
+  up: "down",
+  down: "up",
+  left: "right",
+  right: "left"
+};
+
+const deltaByDir: Record<Exclude<Direction, "none">, Phaser.Math.Vector2> = {
+  up: new Phaser.Math.Vector2(0, -1),
+  down: new Phaser.Math.Vector2(0, 1),
+  left: new Phaser.Math.Vector2(-1, 0),
+  right: new Phaser.Math.Vector2(1, 0)
+};
+
+class DPadInput {
+  private pointerDirections = new Map<number, Exclude<Direction, "none">>();
+
+  private activeDir: Direction = "none";
+
+  constructor() {
+    const dpad = document.getElementById("dpad");
+    if (!dpad) {
+      return;
+    }
+
+    dpad.querySelectorAll<HTMLButtonElement>(".dpad-btn").forEach((button) => {
+      button.addEventListener("pointerdown", (event) => {
+        const dir = button.dataset.dir as Exclude<Direction, "none">;
+        this.pointerDirections.set(event.pointerId, dir);
+        this.updateDirection(dir);
+        button.classList.add("active");
+        button.setPointerCapture(event.pointerId);
+        event.preventDefault();
+      });
+
+      button.addEventListener("pointermove", (event) => {
+        const target = document.elementFromPoint(event.clientX, event.clientY) as HTMLElement | null;
+        const dir = target?.dataset?.dir as Exclude<Direction, "none"> | undefined;
+        if (dir) {
+          this.pointerDirections.set(event.pointerId, dir);
+          this.updateDirection(dir);
+          this.refreshActiveButtons();
+        }
+        event.preventDefault();
+      });
+
+      const releasePointer = (event: PointerEvent) => {
+        this.pointerDirections.delete(event.pointerId);
+        const nextDir = this.pointerDirections.size
+          ? this.pointerDirections.values().next().value
+          : "none";
+        this.activeDir = nextDir ?? "none";
+        this.refreshActiveButtons();
+        event.preventDefault();
+      };
+
+      button.addEventListener("pointerup", releasePointer);
+      button.addEventListener("pointercancel", releasePointer);
+      button.addEventListener("pointerleave", releasePointer);
+    });
+  }
+
+  getDirection(): Direction {
+    return this.activeDir;
+  }
+
+  private updateDirection(dir: Exclude<Direction, "none">): void {
+    this.activeDir = dir;
+  }
+
+  private refreshActiveButtons(): void {
+    const dpad = document.getElementById("dpad");
+    if (!dpad) {
+      return;
+    }
+
+    dpad.querySelectorAll<HTMLButtonElement>(".dpad-btn").forEach((button) => {
+      button.classList.toggle("active", button.dataset.dir === this.activeDir);
+    });
+  }
+}
+
+class StageManager {
+  getStageStats(stage: number): StageStats {
+    const mapIndex = (stage - 1) % 3;
+    const enemyCount = Math.min(6, stage + 1);
+    const speedGrowthStages = Math.max(0, stage - 5);
+    const multiplier = Math.min(
+      STAGE_SPEED_CAP_MULTIPLIER,
+      1 + speedGrowthStages * STAGE_SPEED_STEP
+    );
+
+    return {
+      mapIndex,
+      enemyCount,
+      enemySpeed: BASE_ENEMY_SPEED * multiplier
+    };
+  }
+}
+
+class DesertCoinScene extends Phaser.Scene {
+  private readonly stageManager = new StageManager();
+
+  private readonly dpadInput = new DPadInput();
+
+  private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
+
+  private wasd!: {
+    up: Phaser.Input.Keyboard.Key;
+    down: Phaser.Input.Keyboard.Key;
+    left: Phaser.Input.Keyboard.Key;
+    right: Phaser.Input.Keyboard.Key;
+  };
+
+  private walls!: Phaser.Physics.Arcade.StaticGroup;
+
+  private pellets!: Phaser.Physics.Arcade.StaticGroup;
+
+  private logos!: Phaser.Physics.Arcade.StaticGroup;
+
+  private enemies: EnemyState[] = [];
+
+  private player!: Phaser.Physics.Arcade.Sprite;
+
+  private currentStage = 1;
+
+  private score = 0;
+
+  private lives = 3;
+
+  private powerUntil = 0;
+
+  private currentDir: Direction = "none";
+
+  private pendingDir: Direction = "none";
+
+  private playerSpawn = new Phaser.Math.Vector2(0, 0);
+
+  private enemySpawns: Phaser.Math.Vector2[] = [];
+
+  private hudText = "";
+
+  create(): void {
+    this.cursors = this.input.keyboard!.createCursorKeys();
+    this.wasd = this.input.keyboard!.addKeys({
+      up: Phaser.Input.Keyboard.KeyCodes.W,
+      down: Phaser.Input.Keyboard.KeyCodes.S,
+      left: Phaser.Input.Keyboard.KeyCodes.A,
+      right: Phaser.Input.Keyboard.KeyCodes.D
+    }) as {
+      up: Phaser.Input.Keyboard.Key;
+      down: Phaser.Input.Keyboard.Key;
+      left: Phaser.Input.Keyboard.Key;
+      right: Phaser.Input.Keyboard.Key;
+    };
+
+    this.createTextures();
+    this.loadStage();
+  }
+
+  update(time: number): void {
+    this.pendingDir = this.getInputDirection();
+    this.updatePlayerMovement();
+    this.updateEnemies(time);
+
+    if (this.powerUntil > 0 && time >= this.powerUntil) {
+      this.powerUntil = 0;
+      this.enemies.forEach((enemy) => enemy.sprite.clearTint());
+    }
+
+    this.updateHud(time);
+
+    if (this.pellets.countActive(true) === 0) {
+      this.currentStage += 1;
+      this.loadStage();
+    }
+  }
+
+  private createTextures(): void {
+    if (!this.textures.exists("wall")) {
+      const wall = this.add.graphics({ x: 0, y: 0 });
+      wall.fillStyle(0x325447, 1);
+      wall.fillRoundedRect(0, 0, TILE_SIZE, TILE_SIZE, 7);
+      wall.lineStyle(2, 0x8ec59e, 0.9);
+      wall.strokeRoundedRect(1, 1, TILE_SIZE - 2, TILE_SIZE - 2, 6);
+      wall.generateTexture("wall", TILE_SIZE, TILE_SIZE);
+      wall.destroy();
+    }
+
+    if (!this.textures.exists("pellet")) {
+      const pellet = this.add.graphics({ x: 0, y: 0 });
+      pellet.fillStyle(0xf1dfbf, 1);
+      pellet.fillCircle(4, 4, 4);
+      pellet.generateTexture("pellet", 8, 8);
+      pellet.destroy();
+    }
+
+    if (!this.textures.exists("logo")) {
+      const logo = this.add.graphics({ x: 0, y: 0 });
+      logo.fillStyle(0x123f35, 1);
+      logo.fillRoundedRect(0, 0, 38, 20, 6);
+      logo.lineStyle(2, 0xf2b441, 1);
+      logo.strokeRoundedRect(0, 0, 38, 20, 6);
+      logo.generateTexture("logo", 38, 20);
+      logo.destroy();
+    }
+
+    this.createCoinTexture("coin-a", false);
+    this.createCoinTexture("coin-b", true);
+    this.createCactusTexture("cactus");
+  }
+
+  private createCoinTexture(key: string, legSpread: boolean): void {
+    if (this.textures.exists(key)) {
+      return;
+    }
+
+    const g = this.add.graphics({ x: 0, y: 0 });
+    g.lineStyle(5, 0x5a4213, 0.95);
+    g.strokeCircle(22, 22, 16);
+    g.fillStyle(0xf4bf41, 1);
+    g.fillCircle(22, 22, 15);
+    g.lineStyle(3, 0x5a4213, 1);
+    g.beginPath();
+    g.moveTo(22, 12);
+    g.lineTo(22, 32);
+    g.moveTo(14, 18);
+    g.lineTo(30, 18);
+    g.moveTo(14, 26);
+    g.lineTo(30, 26);
+    g.strokePath();
+
+    g.lineStyle(3, 0x5a4213, 1);
+    g.beginPath();
+    g.moveTo(10, 20);
+    g.lineTo(4, 16);
+    g.moveTo(34, 20);
+    g.lineTo(40, 16);
+
+    if (legSpread) {
+      g.moveTo(18, 36);
+      g.lineTo(12, 43);
+      g.moveTo(26, 36);
+      g.lineTo(32, 43);
+    } else {
+      g.moveTo(18, 36);
+      g.lineTo(18, 43);
+      g.moveTo(26, 36);
+      g.lineTo(26, 43);
+    }
+    g.strokePath();
+    g.generateTexture(key, 44, 46);
+    g.destroy();
+  }
+
+  private createCactusTexture(key: string): void {
+    if (this.textures.exists(key)) {
+      return;
+    }
+
+    const g = this.add.graphics({ x: 0, y: 0 });
+    g.fillStyle(0x3f9e67, 1);
+    g.fillRoundedRect(11, 6, 20, 34, 8);
+    g.fillRoundedRect(4, 14, 10, 16, 5);
+    g.fillRoundedRect(28, 14, 10, 16, 5);
+    g.fillStyle(0x1f613f, 1);
+    g.fillRect(20, 0, 5, 7);
+    g.lineStyle(2, 0xd4f7db, 0.65);
+    g.strokeLineShape(new Phaser.Geom.Line(16, 10, 16, 34));
+    g.strokeLineShape(new Phaser.Geom.Line(26, 10, 26, 34));
+
+    g.fillStyle(0x8f8f8f, 1);
+    g.fillRect(32, 7, 15, 4);
+    g.fillStyle(0xb53c2e, 1);
+    g.fillTriangle(47, 6, 47, 12, 54, 9);
+
+    g.generateTexture(key, 54, 44);
+    g.destroy();
+  }
+
+  private loadStage(): void {
+    this.clearStageObjects();
+
+    const stats = this.stageManager.getStageStats(this.currentStage);
+    const layout = MAPS[stats.mapIndex];
+    this.enemySpawns = [];
+
+    this.walls = this.physics.add.staticGroup();
+    this.pellets = this.physics.add.staticGroup();
+    this.logos = this.physics.add.staticGroup();
+
+    const mapHeight = layout.length;
+    const mapWidth = layout[0].length;
+    const worldWidth = mapWidth * TILE_SIZE;
+    const worldHeight = mapHeight * TILE_SIZE;
+
+    this.physics.world.setBounds(0, 0, worldWidth, worldHeight);
+    this.cameras.main.setBounds(0, 0, worldWidth, worldHeight);
+    this.cameras.main.setBackgroundColor(0x121212);
+
+    for (let y = 0; y < mapHeight; y += 1) {
+      for (let x = 0; x < mapWidth; x += 1) {
+        const tile = layout[y][x];
+        const px = x * TILE_SIZE + TILE_SIZE / 2;
+        const py = y * TILE_SIZE + TILE_SIZE / 2;
+
+        if (tile === "#") {
+          this.walls.create(px, py, "wall");
+        } else {
+          if (tile !== "P" && tile !== "E" && tile !== "G") {
+            this.pellets.create(px, py, "pellet");
+          }
+          if (tile === "P") {
+            this.playerSpawn.set(px, py);
+          }
+          if (tile === "E") {
+            this.enemySpawns.push(new Phaser.Math.Vector2(px, py));
+          }
+          if (tile === "G") {
+            this.logos.create(px, py, "logo");
+          }
+        }
+      }
+    }
+
+    if (!this.player) {
+      this.player = this.physics.add.sprite(this.playerSpawn.x, this.playerSpawn.y, "coin-a");
+      this.player.setCollideWorldBounds(true);
+      this.player.body!.setSize(24, 24);
+      this.player.body!.setOffset(10, 10);
+      this.player.setDepth(5);
+    } else {
+      this.player.setPosition(this.playerSpawn.x, this.playerSpawn.y);
+      this.player.setVelocity(0, 0);
+    }
+
+    this.currentDir = "none";
+    this.pendingDir = "none";
+
+    this.enemies = [];
+    for (let i = 0; i < stats.enemyCount; i += 1) {
+      const spawn = this.enemySpawns[i % this.enemySpawns.length] ?? this.playerSpawn.clone();
+      const enemy = this.physics.add.sprite(spawn.x, spawn.y, "cactus");
+      enemy.body!.setSize(24, 24);
+      enemy.body!.setOffset(14, 10);
+      enemy.setCollideWorldBounds(true);
+      enemy.setDepth(4);
+
+      this.enemies.push({
+        sprite: enemy,
+        dir: Phaser.Utils.Array.GetRandom(["up", "down", "left", "right"]),
+        spawn: spawn.clone()
+      });
+    }
+
+    this.physics.add.collider(this.player, this.walls);
+    this.enemies.forEach((enemy) => this.physics.add.collider(enemy.sprite, this.walls));
+
+    this.physics.add.overlap(this.player, this.pellets, (_player, pellet) => {
+      pellet.destroy();
+      this.score += 10;
+    });
+
+    this.physics.add.overlap(this.player, this.logos, (_player, logo) => {
+      logo.destroy();
+      this.powerUntil = this.time.now + POWER_DURATION_MS;
+      this.score += 100;
+      this.enemies.forEach((enemy) => enemy.sprite.setTint(0x7be7ff));
+    });
+
+    this.enemies.forEach((enemyState) => {
+      this.physics.add.overlap(this.player, enemyState.sprite, () => {
+        if (!enemyState.sprite.active) {
+          return;
+        }
+
+        if (this.time.now < this.powerUntil) {
+          this.score += 200;
+          this.resetEnemy(enemyState);
+          return;
+        }
+
+        this.handlePlayerHit();
+      });
+    });
+
+    this.cameras.main.startFollow(this.player, true, 0.12, 0.12);
+  }
+
+  private clearStageObjects(): void {
+    this.walls?.clear(true, true);
+    this.pellets?.clear(true, true);
+    this.logos?.clear(true, true);
+    this.enemies.forEach((enemy) => enemy.sprite.destroy());
+    this.enemies = [];
+  }
+
+  private resetEnemy(enemyState: EnemyState): void {
+    enemyState.sprite.setPosition(enemyState.spawn.x, enemyState.spawn.y);
+    enemyState.sprite.setVelocity(0, 0);
+    enemyState.dir = Phaser.Utils.Array.GetRandom(["up", "down", "left", "right"]);
+  }
+
+  private handlePlayerHit(): void {
+    this.lives -= 1;
+    if (this.lives <= 0) {
+      this.lives = 3;
+      this.score = 0;
+      this.currentStage = 1;
+    }
+    this.powerUntil = 0;
+    this.loadStage();
+  }
+
+  private getInputDirection(): Direction {
+    if (this.cursors.left?.isDown || this.wasd.left.isDown) {
+      return "left";
+    }
+    if (this.cursors.right?.isDown || this.wasd.right.isDown) {
+      return "right";
+    }
+    if (this.cursors.up?.isDown || this.wasd.up.isDown) {
+      return "up";
+    }
+    if (this.cursors.down?.isDown || this.wasd.down.isDown) {
+      return "down";
+    }
+    return this.dpadInput.getDirection();
+  }
+
+  private updatePlayerMovement(): void {
+    if (!this.player.body) {
+      return;
+    }
+
+    const playerTile = this.toTileCoords(this.player.x, this.player.y);
+    const center = this.toWorldCenter(playerTile.x, playerTile.y);
+    const nearCenter = Phaser.Math.Distance.Between(this.player.x, this.player.y, center.x, center.y) < 5;
+
+    if (nearCenter) {
+      this.player.setPosition(center.x, center.y);
+
+      if (this.pendingDir !== "none" && this.canMoveFromTile(playerTile.x, playerTile.y, this.pendingDir)) {
+        this.currentDir = this.pendingDir;
+      }
+
+      if (!this.canMoveFromTile(playerTile.x, playerTile.y, this.currentDir)) {
+        this.currentDir = "none";
+      }
+    }
+
+    const velocity = this.velocityFromDirection(this.currentDir, PLAYER_SPEED);
+    this.player.setVelocity(velocity.x, velocity.y);
+
+    const moving = this.currentDir !== "none";
+    const runTexture = moving && Math.floor(this.time.now / 130) % 2 === 0 ? "coin-a" : "coin-b";
+    this.player.setTexture(runTexture);
+  }
+
+  private updateEnemies(time: number): void {
+    const stats = this.stageManager.getStageStats(this.currentStage);
+    const frightened = time < this.powerUntil;
+    const speed = frightened ? stats.enemySpeed * 0.75 : stats.enemySpeed;
+
+    for (const enemyState of this.enemies) {
+      const enemy = enemyState.sprite;
+      const tile = this.toTileCoords(enemy.x, enemy.y);
+      const center = this.toWorldCenter(tile.x, tile.y);
+      const nearCenter = Phaser.Math.Distance.Between(enemy.x, enemy.y, center.x, center.y) < 5;
+
+      if (nearCenter) {
+        enemy.setPosition(center.x, center.y);
+        enemyState.dir = this.chooseEnemyDirection(tile.x, tile.y, enemyState.dir, frightened);
+      }
+
+      const velocity = this.velocityFromDirection(enemyState.dir, speed);
+      enemy.setVelocity(velocity.x, velocity.y);
+    }
+  }
+
+  private chooseEnemyDirection(
+    tileX: number,
+    tileY: number,
+    currentDir: Direction,
+    frightened: boolean
+  ): Direction {
+    const dirs: Exclude<Direction, "none">[] = ["up", "down", "left", "right"];
+    const valid = dirs.filter((dir) => this.canMoveFromTile(tileX, tileY, dir));
+
+    if (valid.length === 0) {
+      return "none";
+    }
+
+    if (valid.length > 1 && currentDir !== "none") {
+      const reverse = oppositeDir[currentDir as Exclude<Direction, "none">];
+      const narrowed = valid.filter((dir) => dir !== reverse);
+      if (narrowed.length > 0) {
+        valid.splice(0, valid.length, ...narrowed);
+      }
+    }
+
+    const targetTile = this.toTileCoords(this.player.x, this.player.y);
+    let bestDir = valid[0];
+    let bestScore = frightened ? Number.NEGATIVE_INFINITY : Number.POSITIVE_INFINITY;
+
+    for (const dir of valid) {
+      const delta = deltaByDir[dir];
+      const nx = tileX + delta.x;
+      const ny = tileY + delta.y;
+      const distance = Math.abs(nx - targetTile.x) + Math.abs(ny - targetTile.y);
+      const randomBias = Phaser.Math.FloatBetween(0, 0.25);
+      const score = frightened ? distance + randomBias : distance - randomBias;
+
+      if (frightened) {
+        if (score > bestScore) {
+          bestScore = score;
+          bestDir = dir;
+        }
+      } else if (score < bestScore) {
+        bestScore = score;
+        bestDir = dir;
+      }
+    }
+
+    return bestDir;
+  }
+
+  private toTileCoords(worldX: number, worldY: number): Phaser.Math.Vector2 {
+    return new Phaser.Math.Vector2(
+      Math.floor(worldX / TILE_SIZE),
+      Math.floor(worldY / TILE_SIZE)
+    );
+  }
+
+  private toWorldCenter(tileX: number, tileY: number): Phaser.Math.Vector2 {
+    return new Phaser.Math.Vector2(
+      tileX * TILE_SIZE + TILE_SIZE / 2,
+      tileY * TILE_SIZE + TILE_SIZE / 2
+    );
+  }
+
+  private canMoveFromTile(tileX: number, tileY: number, dir: Direction): boolean {
+    if (dir === "none") {
+      return false;
+    }
+
+    const map = MAPS[(this.currentStage - 1) % 3];
+    const delta = deltaByDir[dir];
+    const nx = tileX + delta.x;
+    const ny = tileY + delta.y;
+
+    const row = map[ny];
+    if (!row) {
+      return false;
+    }
+
+    return row[nx] !== "#";
+  }
+
+  private velocityFromDirection(dir: Direction, speed: number): Phaser.Math.Vector2 {
+    if (dir === "none") {
+      return new Phaser.Math.Vector2(0, 0);
+    }
+
+    const delta = deltaByDir[dir];
+    return new Phaser.Math.Vector2(delta.x * speed, delta.y * speed);
+  }
+
+  private updateHud(time: number): void {
+    const powerLeft = Math.max(0, this.powerUntil - time);
+    const powerSec = (powerLeft / 1000).toFixed(1);
+    const stageStats = this.stageManager.getStageStats(this.currentStage);
+    const modeText = powerLeft > 0 ? ` | GOOD SHOW ${powerSec}s` : "";
+
+    const text = `Stage ${this.currentStage} | Map ${stageStats.mapIndex + 1} | Enemies ${stageStats.enemyCount} | Score ${this.score} | Lives ${this.lives}${modeText}`;
+
+    if (text === this.hudText) {
+      return;
+    }
+
+    this.hudText = text;
+    const hudEl = document.getElementById("hudText");
+    if (hudEl) {
+      hudEl.textContent = text;
+    }
+  }
+}
+
+const config: Phaser.Types.Core.GameConfig = {
+  type: Phaser.AUTO,
+  parent: "game",
+  width: MAPS[0][0].length * TILE_SIZE,
+  height: MAPS[0].length * TILE_SIZE,
+  backgroundColor: "#0f1310",
+  pixelArt: false,
+  scale: {
+    mode: Phaser.Scale.FIT,
+    autoCenter: Phaser.Scale.CENTER_BOTH
+  },
+  physics: {
+    default: "arcade",
+    arcade: {
+      debug: false
+    }
+  },
+  scene: DesertCoinScene
+};
+
+new Phaser.Game(config);
