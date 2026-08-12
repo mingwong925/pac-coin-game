@@ -157,9 +157,10 @@ canvas { display: block; width: 100%; height: auto; image-rendering: pixelated; 
     position: absolute;
     left: 50%;
     top: 50%;
-    width: 0;
-    height: 0;
-    border-style: solid;
+    width: 7px;
+    height: 7px;
+    background: #111;
+    transform: translate(-17px, -17px);
     filter: drop-shadow(3px 3px 0 rgba(255,255,255,.45));
   }
 
@@ -169,26 +170,38 @@ canvas { display: block; width: 100%; height: auto; image-rendering: pixelated; 
   }
 
   #mobileControls [data-dir="left"]::before {
-    transform: translate(-58%, -50%);
-    border-width: 13px 19px 13px 0;
-    border-color: transparent #111 transparent transparent;
+    box-shadow:
+      7px 0 #111,
+      0 7px #111, 7px 7px #111, 14px 7px #111,
+      0 14px #111, 7px 14px #111, 14px 14px #111, 21px 14px #111, 28px 14px #111,
+      0 21px #111, 7px 21px #111, 14px 21px #111,
+      7px 28px #111;
   }
 
   #mobileControls [data-dir="up"]::before {
-    transform: translate(-50%, -58%);
-    border-width: 0 13px 19px 13px;
-    border-color: transparent transparent #111 transparent;
+    box-shadow:
+      14px 0 #111,
+      7px 7px #111, 14px 7px #111, 21px 7px #111,
+      0 14px #111, 7px 14px #111, 14px 14px #111, 21px 14px #111, 28px 14px #111,
+      14px 21px #111,
+      14px 28px #111;
   }
 
   #mobileControls [data-dir="down"]::before {
-    transform: translate(-50%, -42%);
-    border-width: 19px 13px 0 13px;
-    border-color: #111 transparent transparent transparent;
+    box-shadow:
+      14px 0 #111,
+      14px 7px #111,
+      0 14px #111, 7px 14px #111, 14px 14px #111, 21px 14px #111, 28px 14px #111,
+      7px 21px #111, 14px 21px #111, 21px 21px #111,
+      14px 28px #111;
   }
 
   #mobileControls [data-dir="right"]::before {
-    transform: translate(-42%, -50%);
-    border-width: 13px 0 13px 19px;
-    border-color: transparent transparent transparent #111;
+    box-shadow:
+      21px 0 #111,
+      14px 7px #111, 21px 7px #111, 28px 7px #111,
+      0 14px #111, 7px 14px #111, 14px 14px #111, 21px 14px #111, 28px 14px #111,
+      14px 21px #111, 21px 21px #111, 28px 21px #111,
+      21px 28px #111;
   }
 }
