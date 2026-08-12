@@ -65,6 +65,8 @@ declare global {
 class Game {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
+  private startScreen = document.getElementById("startScreen") as HTMLElement;
+  private startButton = document.getElementById("startButton") as HTMLButtonElement;
   private overlay = document.getElementById("overlay") as HTMLElement;
   private hudL = document.getElementById("hudLeft") as HTMLElement;
   private hudM = document.getElementById("hudMid") as HTMLElement;
@@ -75,6 +77,7 @@ class Game {
   private lives = 3;
   private fright = 0;
   private readyTimer = 1.2;
+  private started = false;
   private over = false;
 
   private map: string[][] = [];
@@ -103,9 +106,10 @@ class Game {
 
     this.bindInput(container);
     window.__GS_INPUT__ = { setDir: (d) => this.swipe = d };
+    this.startButton.addEventListener("click", () => this.startGame());
 
     this.loadStage();
-    this.showOverlay("READY!");
+    this.hideOverlay();
     window.setInterval(() => this.loop(performance.now()), 1000 / 60);
   }
 
@@ -118,6 +122,7 @@ class Game {
       lives: this.lives,
       fright: this.fright,
       readyTimer: this.readyTimer,
+      started: this.started,
       over: this.over,
       ticks: this.ticks,
       updateTicks: this.updateTicks,
@@ -182,6 +187,7 @@ class Game {
       const k = e.key.toLowerCase();
       if (["arrowup","arrowdown","arrowleft","arrowright","w","a","s","d"," "].includes(k)) e.preventDefault();
       this.keys.add(k);
+      if (!this.started && (k === "enter" || k === " ")) this.startGame();
       if (this.over && (k === "enter" || k === " ")) this.restart();
     });
     window.addEventListener("keyup", (e) => this.keys.delete(e.key.toLowerCase()));
@@ -189,6 +195,7 @@ class Game {
     let sx: number | null = null, sy: number | null = null;
     container.style.touchAction = "none";
     container.addEventListener("pointerdown", (e) => {
+      if (!this.started) return;
       this.unlockAudio();
       sx = e.clientX; sy = e.clientY;
       container.setPointerCapture(e.pointerId);
@@ -278,16 +285,25 @@ class Game {
       void jailC;
     }
     this.fright = 0;
-    this.readyTimer = 1.2;
+    this.readyTimer = this.started ? 1.2 : 0;
     this.over = false;
     this.updateHud();
-    this.showOverlay("READY!");
+    if (this.started) this.showOverlay("READY!");
   }
 
 
   private restart(): void {
     this.stage = 1; this.score = 0; this.lives = 3;
     this.loadStage();
+  }
+
+  private startGame(): void {
+    if (this.started) return;
+    this.unlockAudio();
+    this.started = true;
+    this.startScreen.classList.add("hide");
+    this.readyTimer = 1.2;
+    this.showOverlay("READY!");
   }
 
   private showOverlay(text: string): void {
@@ -304,7 +320,7 @@ class Game {
     if (this.readyTimer > 0) {
       this.readyTimer -= dt;
       if (this.readyTimer <= 0) this.hideOverlay();
-    } else if (!this.over) {
+    } else if (this.started && !this.over) {
       this.updateTicks += 1;
       this.updatePlayer(dt);
       this.updateGhosts(dt);
