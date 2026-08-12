@@ -89,6 +89,8 @@ class Game {
 
   private keys = new Set<string>();
   private swipe: Dir = "none";
+  private gamepadDir: Dir = "none";
+  private gamepadActionHeld = false;
 
   private ticks = 0;
   private updateTicks = 0;
@@ -106,7 +108,7 @@ class Game {
     container.prepend(this.canvas);
 
     this.bindInput(container);
-  this.bindMobileControls();
+    this.bindMobileControls();
     window.__GS_INPUT__ = { setDir: (d) => this.swipe = d };
     this.startButton.addEventListener("click", () => this.startGame());
 
@@ -130,6 +132,7 @@ class Game {
       updateTicks: this.updateTicks,
       playerMoveTotal: this.playerMoveTotal,
       ghostMoveTotal: this.ghostMoveTotal,
+      gamepadDir: this.gamepadDir,
     };
   }
 
@@ -237,7 +240,36 @@ class Game {
     if (this.keys.has("arrowdown") || this.keys.has("s")) return "down";
     if (this.keys.has("arrowleft") || this.keys.has("a")) return "left";
     if (this.keys.has("arrowright") || this.keys.has("d")) return "right";
+    if (this.gamepadDir !== "none") return this.gamepadDir;
     return this.swipe;
+  }
+
+  private pollGamepad(): void {
+    const pads = navigator.getGamepads?.() ?? [];
+    const pad = Array.from(pads).find((candidate): candidate is Gamepad => candidate !== null);
+    if (!pad) {
+      this.gamepadDir = "none";
+      this.gamepadActionHeld = false;
+      return;
+    }
+
+    const pressed = (index: number) => pad.buttons[index]?.pressed === true;
+    const x = pad.axes[0] ?? 0;
+    const y = pad.axes[1] ?? 0;
+    const axisDeadZone = 0.45;
+
+    if (pressed(12) || y < -axisDeadZone) this.gamepadDir = "up";
+    else if (pressed(13) || y > axisDeadZone) this.gamepadDir = "down";
+    else if (pressed(14) || x < -axisDeadZone) this.gamepadDir = "left";
+    else if (pressed(15) || x > axisDeadZone) this.gamepadDir = "right";
+    else this.gamepadDir = "none";
+
+    const actionPressed = pressed(0) || pressed(9) || pressed(16);
+    if (actionPressed && !this.gamepadActionHeld) {
+      if (this.over) this.returnToCover();
+      else if (!this.started) this.startGame();
+    }
+    this.gamepadActionHeld = actionPressed;
   }
 
   /* ---------- maze helpers ---------- */
@@ -325,6 +357,7 @@ class Game {
     this.lives = 3;
     this.fright = 0;
     this.swipe = "none";
+    this.gamepadDir = "none";
     this.loadStage();
     this.startScreen.classList.remove("hide");
     this.mobileControls.classList.remove("show");
@@ -341,6 +374,7 @@ class Game {
   private loop(now: number): void {
     this.ticks += 1;
     const dt = 1 / 60;
+    this.pollGamepad();
 
     if (this.readyTimer > 0) {
       this.readyTimer -= dt;
