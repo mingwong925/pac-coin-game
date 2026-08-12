@@ -114,3 +114,54 @@ canvas { display: block; width: 100%; height: auto; image-rendering: pixelated; 
   white-space: pre-line;
 }
 #overlay.show { opacity: 1; }
+
+#mobileControls {
+  display: none;
+}
+
+@media (max-width: 720px), (hover: none), (pointer: coarse) {
+  #app {
+    justify-content: flex-start;
+  }
+
+  #mobileControls {
+    width: min(96vw, 360px);
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-areas:
+      ". up ."
+      "left down right";
+    gap: 10px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(8px);
+    transition: opacity .16s ease, transform .16s ease;
+  }
+
+  #mobileControls.show {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(0);
+  }
+
+  #mobileControls button {
+    min-height: 48px;
+    border: 3px solid #111;
+    border-radius: 0;
+    background: #f7c948;
+    color: #111;
+    font: 900 22px/1 ui-monospace, Menlo, Monaco, monospace;
+    box-shadow: 0 6px 0 #7a4b00, 0 0 0 2px #fff4a6 inset;
+    touch-action: none;
+  }
+
+  #mobileControls button:active {
+    transform: translateY(4px);
+    box-shadow: 0 2px 0 #7a4b00, 0 0 0 2px #fff4a6 inset;
+  }
+
+  #mobileControls [data-dir="up"] { grid-area: up; }
+  #mobileControls [data-dir="left"] { grid-area: left; }
+  #mobileControls [data-dir="down"] { grid-area: down; }
+  #mobileControls [data-dir="right"] { grid-area: right; }
+}

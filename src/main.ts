@@ -67,6 +67,7 @@ class Game {
   private ctx: CanvasRenderingContext2D;
   private startScreen = document.getElementById("startScreen") as HTMLElement;
   private startButton = document.getElementById("startButton") as HTMLButtonElement;
+  private mobileControls = document.getElementById("mobileControls") as HTMLElement;
   private overlay = document.getElementById("overlay") as HTMLElement;
   private hudL = document.getElementById("hudLeft") as HTMLElement;
   private hudM = document.getElementById("hudMid") as HTMLElement;
@@ -105,6 +106,7 @@ class Game {
     container.prepend(this.canvas);
 
     this.bindInput(container);
+  this.bindMobileControls();
     window.__GS_INPUT__ = { setDir: (d) => this.swipe = d };
     this.startButton.addEventListener("click", () => this.startGame());
 
@@ -215,6 +217,21 @@ class Game {
     container.addEventListener("pointercancel", end);
   }
 
+  private bindMobileControls(): void {
+    const buttons = Array.from(this.mobileControls.querySelectorAll<HTMLButtonElement>("[data-dir]"));
+    for (const button of buttons) {
+      const dir = button.dataset.dir as Dir;
+      button.addEventListener("pointerdown", (e) => {
+        this.unlockAudio();
+        this.swipe = dir;
+        this.player.want = dir;
+        e.preventDefault();
+      });
+      button.addEventListener("pointerup", (e) => { this.swipe = "none"; e.preventDefault(); });
+      button.addEventListener("pointercancel", (e) => { this.swipe = "none"; e.preventDefault(); });
+    }
+  }
+
   private inputDir(): Dir {
     if (this.keys.has("arrowup") || this.keys.has("w")) return "up";
     if (this.keys.has("arrowdown") || this.keys.has("s")) return "down";
@@ -296,6 +313,7 @@ class Game {
     this.unlockAudio();
     this.started = true;
     this.startScreen.classList.add("hide");
+    this.mobileControls.classList.add("show");
     this.readyTimer = 1.2;
     this.showOverlay("READY!");
   }
@@ -306,8 +324,10 @@ class Game {
     this.score = 0;
     this.lives = 3;
     this.fright = 0;
+    this.swipe = "none";
     this.loadStage();
     this.startScreen.classList.remove("hide");
+    this.mobileControls.classList.remove("show");
     this.hideOverlay();
   }
 
@@ -567,6 +587,7 @@ class Game {
           this.updateHud();
           if (this.lives <= 0) {
             this.over = true;
+            this.mobileControls.classList.remove("show");
             this.showOverlay(`GAME OVER\nSCORE ${this.score}\nTap / Enter`);
           } else {
             this.loadStagePositionsOnly();
