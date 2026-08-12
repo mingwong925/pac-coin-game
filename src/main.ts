@@ -187,8 +187,8 @@ class Game {
       const k = e.key.toLowerCase();
       if (["arrowup","arrowdown","arrowleft","arrowright","w","a","s","d"," "].includes(k)) e.preventDefault();
       this.keys.add(k);
+      if (this.over && (k === "enter" || k === " ")) { this.returnToCover(); return; }
       if (!this.started && (k === "enter" || k === " ")) this.startGame();
-      if (this.over && (k === "enter" || k === " ")) this.restart();
     });
     window.addEventListener("keyup", (e) => this.keys.delete(e.key.toLowerCase()));
 
@@ -199,7 +199,7 @@ class Game {
       this.unlockAudio();
       sx = e.clientX; sy = e.clientY;
       container.setPointerCapture(e.pointerId);
-      if (this.over) this.restart();
+      if (this.over) { this.returnToCover(); e.preventDefault(); return; }
       e.preventDefault();
     });
     container.addEventListener("pointermove", (e) => {
@@ -291,12 +291,6 @@ class Game {
     if (this.started) this.showOverlay("READY!");
   }
 
-
-  private restart(): void {
-    this.stage = 1; this.score = 0; this.lives = 3;
-    this.loadStage();
-  }
-
   private startGame(): void {
     if (this.started) return;
     this.unlockAudio();
@@ -304,6 +298,17 @@ class Game {
     this.startScreen.classList.add("hide");
     this.readyTimer = 1.2;
     this.showOverlay("READY!");
+  }
+
+  private returnToCover(): void {
+    this.started = false;
+    this.stage = 1;
+    this.score = 0;
+    this.lives = 3;
+    this.fright = 0;
+    this.loadStage();
+    this.startScreen.classList.remove("hide");
+    this.hideOverlay();
   }
 
   private showOverlay(text: string): void {
@@ -562,7 +567,7 @@ class Game {
           this.updateHud();
           if (this.lives <= 0) {
             this.over = true;
-            this.showOverlay("GAME OVER\nTap / Enter to restart");
+            this.showOverlay(`GAME OVER\nSCORE ${this.score}\nTap / Enter`);
           } else {
             this.loadStagePositionsOnly();
             this.showOverlay("OUCH!");
